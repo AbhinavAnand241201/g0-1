@@ -6,11 +6,12 @@ import (
 	"time"
 )
 
+// 1. DATA MODELING
+// We don't just want strings; we want data we can analyze later.
 type Result struct {
 	URL        string
 	StatusCode int
 	IsUp       bool
-	Latency    time.Duration // <--- NEW FIELD
 }
 
 func main() {
@@ -22,68 +23,58 @@ func main() {
 		"https://amazon.com",
 	}
 
+	
 	jobs := make(chan string, len(websites))
+	// results: A buffered channel to hold the finished reports
 	results := make(chan Result, len(websites))
 
-	// Start 3 Workers
-	for w := 1; w <= 3; w++ {
+	
+	numWorkers := 3
+	for w := 1; w <= numWorkers; w++ {
 		go worker(w, jobs, results)
 	}
 
-	// Send Jobs
+	start := time.Now()
+
+	
 	for _, url := range websites {
 		jobs <- url
 	}
-	close(jobs)
+	close(jobs) // "No more jobs to add!"
 
-	// Collect & Print Results
 	for i := 0; i < len(websites); i++ {
 		result := <-results
 		printResult(result)
 	}
+
+	fmt.Printf("\nTotal time taken: %s\n", time.Since(start))
 }
 
 func worker(id int, jobs <-chan string, results chan<- Result) {
+	
 	for url := range jobs {
-		// 1. Start the stopwatch
-		start := time.Now()
+		
 		
 		resp, err := http.Get(url)
 		
-		// 2. Stop the stopwatch
-		latency := time.Since(start)
-
-		result := Result{
-			URL:     url,
-			Latency: latency, // <--- Store it
-			IsUp:    true,
-		}
-
+		result := Result{URL: url, IsUp: true}
+		
 		if err != nil {
 			result.IsUp = false
 			result.StatusCode = 0
 		} else {
 			result.StatusCode = resp.StatusCode
-			resp.Body.Close() // Good practice: Close the body to free memory
 		}
 
 		results <- result
 	}
 }
 
+// Helper to make printing cleaner
 func printResult(r Result) {
-	// 3. Make the output look like a pro tool
 	if r.IsUp {
-		fmt.Printf("[UP]   Status: %d | Latency: %-10s | %s\n", r.StatusCode, r.Latency, r.URL)
+		fmt.Printf("[%d] %s is UP\n", r.StatusCode, r.URL)
 	} else {
-		fmt.Printf("[DOWN] Status: ERR | Latency: %-10s | %s\n", r.Latency, r.URL)
+		fmt.Printf("[DOWN] %s\n", r.URL)
 	}
 }
-
-// Concept Check: %-10s
-
-// In fmt.Printf, the %s prints a string.
-
-// %10s: Adds padding to the left.
-
-// %-10s: Adds padding to the right.
