@@ -3,9 +3,16 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"sync" // We need this back!
 	"time"
 )
+
+// 1. DATA MODELING
+// We don't just want strings; we want data we can analyze later.
+type Result struct {
+	URL        string
+	StatusCode int
+	IsUp       bool
+}
 
 func main() {
 	websites := []string{
@@ -16,41 +23,58 @@ func main() {
 		"https://amazon.com",
 	}
 
-	c := make(chan string)
-	var wg sync.WaitGroup 
+	
+	jobs := make(chan string, len(websites))
+	// results: A buffered channel to hold the finished reports
+	results := make(chan Result, len(websites))
+
+	
+	numWorkers := 3
+	for w := 1; w <= numWorkers; w++ {
+		go worker(w, jobs, results)
+	}
 
 	start := time.Now()
 
-	for _, site := range websites {
-		wg.Add(1)
-		go checkWebsite(site, c, &wg)
+	
+	for _, url := range websites {
+		jobs <- url
 	}
+	close(jobs) // "No more jobs to add!"
 
-	
-	go func() {
-		wg.Wait()
-		close(c) 
-	}()
-
-	
-	for msg := range c {
-		fmt.Println(msg)
+	for i := 0; i < len(websites); i++ {
+		result := <-results
+		printResult(result)
 	}
 
 	fmt.Printf("\nTotal time taken: %s\n", time.Since(start))
 }
 
-func checkWebsite(url string, c chan string, wg *sync.WaitGroup) {
-	defer wg.Done() 
+func worker(id int, jobs <-chan string, results chan<- Result) {
+	
+	for url := range jobs {
+		
+		
+		resp, err := http.Get(url)
+		
+		result := Result{URL: url, IsUp: true}
+		
+		if err != nil {
+			result.IsUp = false
+			result.StatusCode = 0
+		} else {
+			result.StatusCode = resp.StatusCode
+		}
 
-	resp, err := http.Get(url)
-	
-	if err != nil {
-		c <- fmt.Sprintf("[DOWN] %s", url)
-		return
+		results <- result
 	}
-	
-	c <- fmt.Sprintf("[%d] %s is UP", resp.StatusCode, url)
 }
 
-
+// Helper to make printing cleaner
+func printResult(r Result) {
+	if r.IsUp {
+		fmt.Printf("[%d] %s is UP\n", r.StatusCode, r.URL)
+	} else {
+		fmt.Printf("[DOWN] %s\n", r.URL)
+	}
+}
